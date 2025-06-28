@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>AR Room Measure</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { margin: 0; overflow: hidden; }        
+    #label {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: red;
+      color: white;
+      padding: 10px 20px;
+      font-family: sans-serif;
+      font-size: 18px;
+      border-radius: 10px;
+      z-index: 1;
+      
+      #resetBtn {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      padding: 8px 16px;
+      font-size: 16px;
+      z-index: 10;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+}
+
+    }
+  </style>
+</head>
+<body>
+  <div id="label">Tap two points to measure</div>
+  <button id="resetBtn" style="display: none;">Reset</button>
+
+
+  <script type="module">
+    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.139.2/build/three.module.js';
+    import { ARButton } from 'https://cdn.jsdelivr.net/npm/three@0.139.2/examples/jsm/webxr/ARButton.js';
+
+    let scene, camera, renderer, controller, reticle;
+    let hitTestSource = null;
+    let hitTestSourceRequested = false;
+    const markers = [];
+    let line;
+    const label = document.getElementById("label");
+
+    init();
+
+    function init() {
+     document.getElementById("resetBtn").onclick = () => {
+
+      markers.forEach(m => scene.remove(m));
+      markers.length = 0;
+      if (line) {
+        scene.remove(line);
+        line = null;
+      }
+      label.textContent = "Tap two points to measure";
+      document.getElementById("resetBtn").style.display = "none";
+    };  
+
+      scene = new THREE.Scene();
+      camera = new THREE.PerspectiveCamera();
+
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.xr.enabled = true;
+      document.body.appendChild(renderer.domElement);
+
+      document.body.appendChild(ARButton.createButton(renderer, {
+        requiredFeatures: ['hit-test']
+      }));
+
+      const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
+      scene.add(light);
+
+      reticle = new THREE.Mesh(
+        new THREE.RingGeometry(0.05, 0.06, 32).rotateX(-Math.PI / 2),
+        new THREE.MeshBasicMaterial({ color: 0x00ff00 })
+      );
+      reticle.matrixAutoUpdate = false;
+      reticle.visible = false;
+      scene.add(reticle);
+
+      controller = renderer.xr.getController(0);
+      controller.addEventListener('select', onSelect);
+      scene.add(controller);
+
+      renderer.setAnimationLoop(render);
+    }
+
+
+    function onSelect() {
+      if (!reticle.visible) {
+        console.log("No surface detected yet.");
+        return;
+      }
+
+      const marker = new THREE.Mesh(
+        new THREE.SphereGeometry(0.01, 16, 16),
+        new THREE.MeshBasicMaterial({ color: 	0xffff00 })
+      );
+      marker.position.setFromMatrixPosition(reticle.matrix);
+      scene.add(marker);
+      markers.push(marker);
+
+  if (markers.length === 2) {
+        const d = markers[0].position.distanceTo(markers[1].position);
+        label.textContent = `Distance: ${d.toFixed(2)} meters`;
+        alert("Distance updated");
+    
+        const points = [markers[0].position, markers[1].position];
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        const material = new THREE.LineBasicMaterial({ color: 0xffff00 });
+        line = new THREE.Line(geometry, material);
+        scene.add(line);
+         document.getElementById("resetBtn").style.display = "block";
+      } else if (markers.length > 2) {
+        markers.forEach(m => scene.remove(m));
+        if (line) scene.remove(line);
+        markers.length = 0;
+        label.textContent = 'Tap two points to measure';
+      }
+    }
+
+    function render(timestamp, frame) {
+      if (frame) {
+        const refSpace = renderer.xr.getReferenceSpace();
+        const session = renderer.xr.getSession();
+
+        if (!hitTestSourceRequested) {
+          session.requestReferenceSpace('viewer').then(space => {
+            session.requestHitTestSource({ space }).then(source => {
+              hitTestSource = source;
+            });
+          });
+
+          session.addEventListener('end', () => {
+            hitTestSourceRequested = false;
+            hitTestSource = null;
+          });
+
+          hitTestSourceRequested = true;
+        }
+
+        if (hitTestSource) {
+          const hitTestResults = frame.getHitTestResults(hitTestSource);
+          if (hitTestResults.length) {
+            const hit = hitTestResults[0];
+            const pose = hit.getPose(refSpace);
+            reticle.visible = true;
+            reticle.matrix.fromArray(pose.transform.matrix);
+          } else {
+            reticle.visible = false;
+          }
+        }
+      }
+
+      renderer.render(scene, camera);
+    }
+    
+    document.getElementById("resetBtn").onclick = () => {
+  markers.forEach(m => scene.remove(m));
+  if (line) scene.remove(line);
+  markers.length = 0;
+  label.textContent = "Tap two points to measure";
+};
+
+  </script>
+</body>
+</html>
